@@ -129,7 +129,7 @@ class Mrb
       p ident:, major:, minor:, size:, compiler:, ver:;
 
       until all_read?
-        type, size = read( 8,"a4 I>")
+        type, size = read(8, "a4 I>")
         p type:, size:;
         case type
         when "IREP"
@@ -137,7 +137,7 @@ class Mrb
           p irep_ver:;
           parse_irep(size)
         when "LVAR"
-          todo
+          read(size, "C#{size}")
         when "DBG\0"
           raise "[TODO] section type #{type}"
         when "END\0"
