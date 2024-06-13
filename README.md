@@ -17,3 +17,7 @@ It is the best way to read [the source code](https://github.com/mruby/mruby) to 
   - On Linux, if you are using rbenv, you can install it with rbenv -- but this does not work because we want to run ruby and mruby at the same time.
     - You can build mruby with ruby-build like `~/.rbenv/plugins/ruby-build/bin/ruby-build mruby-3.3.0 /home/yhara/bin/mruby`
       and then set the `PATH` include it.
+
+## License
+
+MIT
