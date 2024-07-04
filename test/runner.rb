@@ -1,8 +1,12 @@
 $LOAD_PATH.unshift("#{__dir__}/../lib")
 require 'mruby-ruby'
 
+filter = ENV["FILTER"]
+
 Dir.chdir("#{__dir__}/cases") do
   Dir["*.rb"].each do |rb_path|
+    next if filter && !rb_path.include?(filter)
+
     system "mrbc #{rb_path}"
     mrb_path = rb_path.sub(/\.rb$/, '.mrb')
     expected = `mruby #{mrb_path}`
