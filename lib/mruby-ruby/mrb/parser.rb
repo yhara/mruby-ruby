@@ -1,7 +1,7 @@
 module MrubyRuby
   class Mrb
     class Parser
-      # Taken from mrubyc/src/opcodes.h
+      # See mruby/include/mruby/ops.h
       OPCODES = [
         {name: :OP_NOP        , code: 0x00, operand_type: :Z    }, # no operation
         {name: :OP_MOVE       , code: 0x01, operand_type: :BB   }, # R[a] = R[b]
@@ -118,21 +118,25 @@ module MrubyRuby
       end
 
       def parse
-        p bytesize: @bin.bytesize
+        mrb = Mrb.new
+        #p bytesize: @bin.bytesize
         ident, major, minor, size, compiler, ver = read(20,"Z4 Z2 Z2 I> Z4 Z4")
         if ident != "RITE"
           raise "not a mruby binary"
         end
-        p ident:, major:, minor:, size:, compiler:, ver:;
+        #p ident:, major:, minor:, size:, compiler:, ver:;
+        mrb.major = major
+        mrb.minor = minor
+        mrb.reps = []
 
         until all_read?
           type, size = read(8, "a4 I>")
-          p type:, size:;
+          #p type:, size:;
           case type
           when "IREP"
             irep_ver, = read(4, "a4")
-            p irep_ver:;
-            parse_irep(size)
+            #p irep_ver:;
+            mrb.reps << parse_irep(size)
           when "LVAR"
             read(size, "C#{size}")
           when "DBG\0"
@@ -143,66 +147,78 @@ module MrubyRuby
             raise "unknown section type #{type}"
           end
         end
+        mrb
       end
 
       def parse_irep(size)
+        rep = Mrb::Rep.new
         start = @cur
         # rlen = number of child ireps
         # clen = number of catch handlers
         # ilen = opecode length
         record_size, nlocals, nregs, rlen, clen, ilen = read(16, "I> S> S> S> S> I>")
-        p record_size:, nlocals:, nregs:, rlen:, clen:, ilen:;
-        parse_iseqs(ilen)
+        #p record_size:, nlocals:, nregs:, rlen:, clen:, ilen:;
+        rep.nlocals = nlocals
+        rep.nregs = nregs
+        rep.clen = clen
 
-        parse_pool_block
+        rep.iseqs = parse_iseqs(ilen)
+        rep.pool = parse_pool_block
+        rep.syms = parse_syms_block
 
-        parse_syms_block
-
-        p read: @cur - start, size: size
+        #p read: @cur - start, size: size
+        rep.children = []
         rlen.times do |i|
-          p child: [i]
-          parse_irep(size)
+          #p child: [i]
+          rep.children << parse_irep(size)
         end
+        rep
       end
 
       def parse_iseqs(ilen)
+        iseqs = []
         start = @cur
         while @cur - start < ilen
           code, = read(1, "C")
-          op = OP_TABLE[code] or raise("unknown opcode 0x%x" % code)
-          case op[:operand_type]
-          when :B
-            a, = read(1, "C")
-            p op: op, a: a
-          when :BB
-            a, b = read(2, "CC")
-            p op: op, a: a, b: b
-          when :BBB
-            a, b, c = read(3, "CCC")
-            p op: op, a: a, b: b, c: c
-          when :BS
-            a, b = read(3, "CS>")
-            p op: op, a: a, b: b
-          when :BSS
-            a, b, c = read(5, "CSS>")
-            p op: op, a: a, b: b, c: c
-          when :W
-            a, = read(2, "S>")
-            p op: op, a: a
-          when :Z
-            p op: op
-          else
-            raise "[TODO] operand type #{op[:operand_type]}"
-          end
+          op_ = OP_TABLE[code] or raise("unknown opcode 0x%x" % code)
+          op = op_[:name]
+          iseqs.push(
+            case op_[:operand_type]
+            when :B
+              a, = read(1, "C")
+              [op, a]
+            when :BB
+              a, b = read(2, "CC")
+              [op, a, b]
+            when :BBB
+              a, b, c = read(3, "CCC")
+              [op, a, b, c]
+            when :BS
+              a, b = read(3, "CS>")
+              [op, a, b]
+            when :BSS
+              a, b, c = read(5, "CSS>")
+              [op, a, b, c]
+            when :W
+              a, = read(2, "S>")
+              [op, a]
+            when :Z
+              [op]
+            else
+              raise "[TODO] operand type #{op[:operand_type]}"
+            end
+          )
         end
+        iseqs
       end
 
       def parse_pool_block
+        literals = []
         n_literals, = read(2, "S>")
-        p n_literals:;
+        #p n_literals:;
         n_literals.times do
           lit_type, lit_len = read(3, "C S>")
-          p lit_type:, lit_len:;
+          #p lit_type:, lit_len:;
           # mruby/include/mruby/irep.h:
           # IREP_TT_STR   = 0,          /* string (need free) */
           # IREP_TT_SSTR  = 2,          /* string (static) */
@@ -213,23 +229,28 @@ module MrubyRuby
           case lit_type
           when 0
             lit_body, = read(lit_len, "Z#{lit_len}")
-            p lit_body:;
-            read(1, "C") # null terminator
+            #p lit_body:;
+            literals << lit_body
+            read(1, "C") # Skip null terminator
           else
             raise "[TODO] literal type #{lit_type}"
           end
         end
+        literals
       end
 
       def parse_syms_block
+        syms = []
         n_syms, = read(2, "S>")
-        p n_syms:;
+        #p n_syms:;
         n_syms.times do
           sym_len, = read(2, "S>")
           sym_body, = read(sym_len, "Z#{sym_len}")
-          p sym_body:;
-          read(1, "C") # null terminator
+          #p sym_body:;
+          syms << sym_body
+          read(1, "C") # Skip null terminator
         end
+        syms
       end
 
       def peek(n, fmt)

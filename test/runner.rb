@@ -20,6 +20,7 @@ Dir.chdir("#{__dir__}/cases") do
       end
     rescue => e
       puts "[#{mrb_path}] #{e}"
+      raise e
     end
   end
 end
