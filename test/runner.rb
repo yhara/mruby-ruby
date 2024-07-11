@@ -3,6 +3,7 @@ require 'mruby-ruby'
 
 filter = ENV["FILTER"]
 
+ret = 0
 Dir.chdir("#{__dir__}/cases") do
   Dir["*.rb"].each do |rb_path|
     next if filter && !rb_path.include?(filter)
@@ -14,9 +15,13 @@ Dir.chdir("#{__dir__}/cases") do
       given_out, given_err = *MrubyRuby.run_file_and_capture(mrb_path)
       if !given_err.empty?
         puts "[#{mrb_path}] stderr: #{given_err}"
+        ret = 1
       end
-      if given_out != expected
+      if given_out == expected
+        puts "[#{mrb_path}] ok"
+      else
         puts "[#{mrb_path}] given_out: #{given_out}, expected: #{expected}"
+        ret = 1
       end
     rescue => e
       puts "[#{mrb_path}] #{e}"
@@ -24,3 +29,4 @@ Dir.chdir("#{__dir__}/cases") do
     end
   end
 end
+exit ret
