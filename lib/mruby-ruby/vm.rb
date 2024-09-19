@@ -95,7 +95,7 @@ module MrubyRuby
         todo
       when :OP_GETCONST
         # TODO: const lookup
-        @regs[op[1]] = Runtime.const_get(rep.syms[op[2]])
+        @regs[op[1]] = @runtime.const_get(rep.syms[op[2]])
       when :OP_SETCONST
         todo
       when :OP_GETMCNST
@@ -264,13 +264,16 @@ module MrubyRuby
       when :OP_OCLASS
         @regs[op[1]] = Object
       when :OP_CLASS
+        name = rep.syms[op[2]]
         sup = op[3]
         if sup.nil?
           cls = Class.new
         else
           cls = Class.new(sup)
         end
-        Runtime.const_set(rep.syms[op[2]], cls)
+        cls = Runtime.create_mruby_class(name, cls)
+        @self = cls
+        @runtime.const_set(name, cls)
         @regs[op[1]] = cls
       when :OP_MODULE
         todo
@@ -279,7 +282,7 @@ module MrubyRuby
         @regs[op[1]] = blockexec(@regs[op[1]], rep.children[op[2]])
       when :OP_DEF
         block = @regs[op[1]+1]
-        @target_class.class.define_method(rep.syms[op[2]], block)
+        Runtime.define_mruby_method(@regs[op[1]], rep.syms[op[2]], block)
         @regs[op[1]] = rep.syms[op[2]]
       when :OP_ALIAS
         todo
@@ -287,7 +290,7 @@ module MrubyRuby
         todo
 
       when :OP_SCLASS
-        @regs[op[1]] = @regs[op[1]].singleton_class
+        @regs[op[1]] = Runtime.get_singleton_class(@regs[op[1]])
       when :OP_TCLASS
         @regs[op[1]] = @target_class
 

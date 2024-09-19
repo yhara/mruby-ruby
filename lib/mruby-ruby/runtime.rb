@@ -10,7 +10,21 @@ module MrubyRuby
         @ivars = ivars
         @singleton_klass = singleton_class
       end
-      attr_reader :klass_obj, :singleton_klass
+      attr_reader :klass_obj
+
+      def mruby_singleton_class
+        # Lazily create singleton class (otherwise infinite loop happens on MObj.new)
+        of = if @klass_obj == BUILTIN_CLASSES[:Class]
+               " of #{ivar_get(:name)}"
+             else
+               ""
+             end
+        @singleton_klass ||= MObj.new(BUILTIN_CLASSES[:Class], {
+          name: "(singleton#{of})",
+          superclass: BUILTIN_CLASSES[:Class],
+          instance_methods: {},
+        })
+      end
 
       def ivar_get(name)
         @ivars[name]
@@ -29,6 +43,7 @@ module MrubyRuby
         klass_name = @klass_obj.ivar_get(:name)
         "#<MObj(#{klass_name}):#{@ivars.inspect}>"
       end
+      alias to_s inspect
     end
 
     BUILTIN_CLASSES = {}
@@ -90,10 +105,13 @@ module MrubyRuby
       @stderr = stderr
       @logger = logger
       @global_variables = {}
+      @constants = BUILTIN_CONSTANTS.dup
       @main = MObj.new(
         BUILTIN_CLASSES[:Object],
         {},
         singleton_class: MObj.new(BUILTIN_CLASSES[:Class], {
+          name: "(singleton of main)",
+          superclass: BUILTIN_CLASSES[:Class],
           instance_methods: {
             inspect: ->(_slf) { Runtime.m_str("main") },
           }
@@ -111,6 +129,14 @@ module MrubyRuby
       @global_variables[name] = value
     end
 
+    # TODO: const namespace
+    def const_get(name)
+      @constants[name.to_s]
+    end
+    def const_set(name, value)
+      @constants[name.to_s] = value
+    end
+
     # TODO: keyword arguments, etc.
     def invoke_mruby_method(receiver, name, *positional_args)
       method = lookup_mruby_method(receiver, name)
@@ -118,8 +144,9 @@ module MrubyRuby
     end
 
     private def lookup_mruby_method(mobj, name)
-      if mobj.singleton_klass
-        method = mobj.singleton_klass.ivar_get(:instance_methods)[name.to_sym]
+      sing = Runtime.get_singleton_class(mobj)
+      if sing
+        method = sing.ivar_get(:instance_methods)[name.to_sym]
         return method if method
       end
       cls = mobj.klass_obj
@@ -134,6 +161,22 @@ module MrubyRuby
       end
       # TODO: raise mruby exception, not Ruby exception
       raise "MRuby method not found: #{name}"
+    end
+
+    def self.create_mruby_class(name, sup, &block)
+      MObj.new(BUILTIN_CLASSES[:Class], {
+        name: name,
+        superclass: sup || BUILTIN_CLASSES[:Object],
+        instance_methods: {},
+      })
+    end
+
+    def self.get_singleton_class(mobj)
+      mobj.mruby_singleton_class
+    end
+
+    def self.define_mruby_method(klass, name, block)
+      klass.ivar_get(:instance_methods)[name.to_sym] = block
     end
 
     def self.ivar_get(mobj, name)
