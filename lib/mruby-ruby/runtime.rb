@@ -53,7 +53,10 @@ module MrubyRuby
       instance_methods: {
         inspect: ->(r, slf) { Runtime.m_str("#<something>") },
         puts: ->(r, _slf, *args) { r.stdout.puts(*args.map{ _1.ivar_get(:content) }) },
-        p: ->(r, _slf, *args) { r.stdout.puts(*args.map{ r.invoke_mruby_method(_1, "inspect") }) },
+        p: ->(r, _slf, *args) { r.stdout.puts(*args.map{ 
+          mstr = r.invoke_mruby_method(_1, "inspect")
+          mstr.ivar_get(:content)
+        }) },
       }
     })
     BUILTIN_CLASSES[:Class] = MObj.new(nil, {
@@ -151,7 +154,7 @@ module MrubyRuby
       end
       cls = mobj.klass_obj
       while cls
-        @logger.debug("lookup_mruby_method(#{name}): cls=#{cls.inspect}")
+        #@logger.debug("lookup_mruby_method(#{name}): cls=#{cls.inspect}")
         method = cls.ivar_get(:instance_methods)[name.to_sym]
         if method
           return method
