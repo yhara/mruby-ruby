@@ -1,9 +1,14 @@
 require 'logger'
+require 'mruby-ruby/runtime'
 
 module MrubyRuby
-  class Runtime
-  end
-
+  # The mruby-ruby virtual machine.
+  #
+  # Objects are represented as JSON-like structures. For example:
+  #
+  #    {class: :Integer, content: 1}
+  #    {class: :String, content: "hello"}
+  #    {class: :Array, content: [...]}
   class Vm
     def initialize(mrb, stdout: $stdout, stderr: $stderr)
       @mrb = mrb
@@ -12,8 +17,8 @@ module MrubyRuby
       @logger = Logger.new(STDERR)
 
       @regs = []
-      @toplevel = Runtime.new
-      @self = @toplevel
+      @runtime = Runtime.new(stdout: stdout, stderr: stderr, logger: @logger)
+      @self = @runtime.main
       @target_class = nil
       @global_vars = {}
     end
@@ -49,41 +54,41 @@ module MrubyRuby
       when :OP_LOADL
         @regs[op[1]] = rep.pool[op[2]]
       when :OP_LOADI
-        @regs[op[1]] = op[2]
+        @regs[op[1]] = Runtime.m_int(op[2])
       when :OP_LOADINEG
-        @regs[op[1]] = -op[2]
+        @regs[op[1]] = Runtime.m_int(-op[2])
       when :OP_LOADI__1
-        @regs[op[1]] = -1
+        @regs[op[1]] = Runtime.m_int(-1)
       when :OP_LOADI_0
-        @regs[op[1]] = 0
+        @regs[op[1]] = Runtime.m_int(0)
       when :OP_LOADI_1
-        @regs[op[1]] = 1
+        @regs[op[1]] = Runtime.m_int(1)
       when :OP_LOADI16
-        @regs[op[1]] = op[2]
+        @regs[op[1]] = Runtime.m_int(op[2])
       when :OP_LOADI32
         todo
       when :OP_LOADSYM
-        @regs[op[1]] = rep.syms[op[2]]
+        @regs[op[1]] = Runtime.m_sym(rep.syms[op[2]])
       when :OP_LOADNIL
-        @regs[op[1]] = nil
+        @regs[op[1]] = Runtime.m_nil
       when :OP_LOADSELF
         @regs[op[1]] = @self
       when :OP_LOADT
-        @regs[op[1]] = true
+        @regs[op[1]] = Runtime.m_bool(true)
       when :OP_LOADF
-        @regs[op[1]] = false
+        @regs[op[1]] = Runtime.m_bool(false)
 
       #
       # Variables
       #
       when :OP_GETGV
-        @regs[op[1]] = @global_vars[rep.syms[op[2]]]
+        @regs[op[1]] = @runtime.gvar_get(rep.syms[op[2]])
       when :OP_SETGV
-        @global_vars[rep.syms[op[2]]] = @regs[op[1]]
+        @runtime.gvar_set(rep.syms[op[2]], @regs[op[1]])
       when :OP_GETIV
-        @regs[op[1]] = @self.instance_variable_get(rep.syms[op[2]])
+        @regs[op[1]] = Runtime.ivar_get(@self, rep.syms[op[2]])
       when :OP_SETIV
-        @self.instance_variable_set(rep.syms[op[2]], @regs[op[1]])
+        Runtime.ivar_set(@self, rep.syms[op[2]], @regs[op[1]])
       when :OP_GETCV
         todo
       when :OP_SETCV
@@ -129,13 +134,13 @@ module MrubyRuby
       when :OP_SSEND
         args = @regs[op[1]+1, op[3]]
         sym = rep.syms[op[2]]
-        @regs[op[1]] = @self.__send__(sym, *args)
+        @regs[op[1]] = @runtime.invoke_mruby_method(@self, sym, *args)
       when :OP_SSENDB
         todo
       when :OP_SEND
         args = @regs[op[1]+1, op[3]]
         sym = rep.syms[op[2]]
-        @regs[op[1]] = @regs[op[1]].__send__(sym, *args)
+        @regs[op[1]] = @runtime.invoke_mruby_method(@regs[op[1]], sym, *args)
       when :OP_SENDB
         todo
       when :OP_CALL
@@ -165,27 +170,27 @@ module MrubyRuby
       # Numeric
       #
       when :OP_ADD
-        @regs[op[1]] = @regs[op[2]] + @regs[op[3]]
+        @regs[op[1]] = Runtime.invoke_mruby_method(@regs[op[2]], :+, @regs[op[3]])
       when :OP_ADDI
-        @regs[op[1]] = @regs[op[2]] + op[3]
+        @regs[op[1]] = Runtime.invoke_mruby_method(@regs[op[2]], :+, Runtime.m_int(op[3]))
       when :OP_SUB
-        @regs[op[1]] = @regs[op[2]] - @regs[op[3]]
+        @regs[op[1]] = Runtime.invoke_mruby_method(@regs[op[2]], :-, @regs[op[3]])
       when :OP_SUBI
-        @regs[op[1]] = @regs[op[2]] - op[3]
+        @regs[op[1]] = Runtime.invoke_mruby_method(@regs[op[2]], :-, Runtime.m_int(op[3]))
       when :OP_MUL
-        @regs[op[1]] = @regs[op[2]] * @regs[op[3]]
+        @regs[op[1]] = Runtime.invoke_mruby_method(@regs[op[2]], :*, @regs[op[3]])
       when :OP_DIV
-        @regs[op[1]] = @regs[op[2]] / @regs[op[3]]
+        @regs[op[1]] = Runtime.invoke_mruby_method(@regs[op[2]], :/, @regs[op[3]])
       when :OP_EQ
-        @regs[op[1]] = @regs[op[2]] == @regs[op[3]]
+        @regs[op[1]] = Runtime.invoke_mruby_method(@regs[op[2]], :==, @regs[op[3]])
       when :OP_LT
-        @regs[op[1]] = @regs[op[2]] < @regs[op[3]]
+        @regs[op[1]] = Runtime.invoke_mruby_method(@regs[op[2]], :<, @regs[op[3]])
       when :OP_LE
-        @regs[op[1]] = @regs[op[2]] <= @regs[op[3]]
+        @regs[op[1]] = Runtime.invoke_mruby_method(@regs[op[2]], :<=, @regs[op[3]])
       when :OP_GT
-        @regs[op[1]] = @regs[op[2]] > @regs[op[3]]
+        @regs[op[1]] = Runtime.invoke_mruby_method(@regs[op[2]], :>, @regs[op[3]])
       when :OP_GE
-        @regs[op[1]] = @regs[op[2]] >= @regs[op[3]]
+        @regs[op[1]] = Runtime.invoke_mruby_method(@regs[op[2]], :>=, @regs[op[3]])
         
       #
       # Array
@@ -209,13 +214,13 @@ module MrubyRuby
       # String/Symbol
       #
       when :OP_INTERN
-        @regs[op[1]] = @regs[op[1]].intern
+        @regs[op[1]] = Runtime.m_str(@regs[op[1]].to_sym)
       when :OP_SYMBOL
-        @regs[op[1]] = rep.pool[op[2]].intern
+        @regs[op[1]] = Runtime.m_sym(rep.pool[op[2]].to_sym)
       when :OP_STRING
-        @regs[op[1]] = rep.pool[op[2]].dup
+        @regs[op[1]] = Runtime.m_str(rep.pool[op[2]])
       when :OP_STRCAT
-        @regs[op[1]] += @regs[op[2]]
+        @regs[op[1]] = Runtime.invoke_mruby_method(@regs[op[1]], :+, @regs[op[2]])
 
       #
       # Hash
