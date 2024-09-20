@@ -52,11 +52,17 @@ module MrubyRuby
       superclass: nil,
       instance_methods: {
         inspect: ->(r, slf) { Runtime.m_str("#<something>") },
-        puts: ->(r, _slf, *args) { r.stdout.puts(*args.map{ _1.ivar_get(:content) }) },
-        p: ->(r, _slf, *args) { r.stdout.puts(*args.map{ 
-          mstr = r.invoke_mruby_method(_1, "inspect")
-          mstr.ivar_get(:content)
-        }) },
+        puts: ->(r, _slf, *args) { 
+          r.stdout.puts(*args.map{ _1.ivar_get(:content) })
+          nil
+        },
+        p: ->(r, _slf, *args) {
+          r.stdout.puts(*args.map{ 
+            mstr = r.invoke_mruby_method(_1, "inspect")
+            mstr.ivar_get(:content)
+          })
+          args.length == 1 ? args[0] : args
+        },
       }
     })
     BUILTIN_CLASSES[:Class] = MObj.new(nil, {
