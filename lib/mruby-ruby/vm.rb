@@ -19,12 +19,13 @@ module MrubyRuby
       @regs = []
       @runtime = Runtime.new(stdout: stdout, stderr: stderr, logger: @logger)
       @self = @runtime.main
-      @target_class = nil
+      @target_class = Runtime.get_singleton_class(@self)
       @global_vars = {}
     end
 
     def run
       eval_rep(@mrb.reps.first)
+      @logger.debug("mruby execution finished #{@regs.inspect}")
     end
 
     def inspect
